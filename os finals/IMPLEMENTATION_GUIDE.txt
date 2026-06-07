@@ -1,0 +1,302 @@
+================================================================================
+OPERATING SYSTEM FINAL PROJECT - IMPLEMENTATION GUIDE
+Task Scheduling with RM and EDF Algorithms
+================================================================================
+
+PROJECT STRUCTURE
+================================================================================
+
+scheduler.c          - Main scheduler implementation
+Input1.txt           - Test case 1 (4 tasks)
+Input2.txt           - Test case 2 (5 tasks)
+REPORT.md            - Comprehensive project report
+Makefile             - Build script
+
+
+COMPILATION INSTRUCTIONS
+================================================================================
+
+Linux/Mac:
+  $ make
+
+Windows (with MinGW/GCC):
+  > gcc -Wall -std=c99 -o scheduler scheduler.c
+
+
+RUNNING THE SCHEDULER
+================================================================================
+
+Test Case 1 (4 tasks, 48.15% utilization):
+  $ ./scheduler Input1.txt
+
+Test Case 2 (5 tasks, 42.62% utilization):
+  $ ./scheduler Input2.txt
+
+Default (reads Input.txt):
+  $ ./scheduler
+
+
+UNDERSTANDING THE OUTPUT
+================================================================================
+
+1. TASK INFORMATION SECTION
+   - Lists all loaded tasks
+   - Shows execution time and period for each
+   - Displays calculated utilization percentage
+   - Shows task utilization individually
+
+2. RM SCHEDULING TRACE
+   - Static priority assignment (by period)
+   - Shows chronological execution sequence
+   - Records preemption points
+   - Indicates task releases and completions
+
+3. EDF SCHEDULING TRACE
+   - Dynamic priority assignment (by deadline)
+   - Similar format to RM trace
+   - Different execution order due to deadline-based selection
+
+KEY CONCEPTS EXPLAINED
+================================================================================
+
+RATE MONOTONIC (RM):
+- Tasks assigned static priority inversely to their period
+- Shorter period → Higher priority (executes more frequently)
+- Optimal for fixed-priority preemptive scheduling
+- Stability Criterion: Total Utilization ≤ n(2^(1/n) - 1)
+  * For 2 tasks: ≤ 82.8%
+  * For 3 tasks: ≤ 77.9%
+  * For 4+ tasks: ≤ 75.0%
+
+EARLIEST DEADLINE FIRST (EDF):
+- Always schedules task with earliest absolute deadline
+- Deadline = current time + period
+- Optimal for dynamic priority scheduling
+- Can achieve 100% utilization (theoretically)
+
+PREEMPTION:
+- When higher-priority task becomes ready, lower-priority task pauses
+- Lower-priority task resumes when no higher-priority work pending
+- Remaining execution time preserved across preemptions
+
+CONTEXT SWITCH:
+- Occurs when different task selected to run
+- Recorded in trace with "Preempted" or "Started" events
+- Zero context switch overhead in this simulation
+
+
+TASK INPUT FILE FORMAT
+================================================================================
+
+First line: N (number of tasks, 1-7)
+Next N lines: E P (execution time, period)
+
+Example:
+  3
+  1 5      <- Task 1: 1 time unit per 5 unit period
+  2 9      <- Task 2: 2 time units per 9 unit period
+  3 12     <- Task 3: 3 time units per 12 unit period
+
+UTILIZATION CALCULATION:
+  Total = (1/5) + (2/9) + (3/12) = 0.20 + 0.22 + 0.25 = 0.67 = 67%
+
+  This would FAIL validation (> 65% limit)
+
+
+ANALYZING SCHEDULER OUTPUT
+================================================================================
+
+1. IDENTIFY CRITICAL INSTANTS:
+   - Points where multiple tasks release simultaneously
+   - Watch for cascading preemptions
+   - Verify highest-priority task executes first
+
+2. CHECK DEADLINE ADHERENCE:
+   - Each task should complete before its deadline
+   - Deadline = release time + period
+   - Missing deadline = scheduling failure
+
+3. COMPARE RM vs EDF:
+   - Note differences in execution order
+   - Observe priority changes in EDF
+   - Count total preemptions in each algorithm
+
+4. VERIFY UTILIZATION:
+   - High utilization → More CPU busy time
+   - Low utilization → More idle periods
+   - 65% limit ensures some slack for overhead
+
+
+COMMON TASK SET PATTERNS
+================================================================================
+
+Pattern 1: Typical IoT Sensor Task Set
+  - Many fast, short-period tasks (sensors)
+  - Few slow, long-period tasks (processing)
+  - Example: 10ms sensor reads + 100ms filtering
+
+Pattern 2: Mixed Hard/Soft Real-Time
+  - Hard tasks with tight constraints (safety-critical)
+  - Soft tasks with loose deadlines (user interface)
+  - Both must meet deadlines but importance differs
+
+Pattern 3: Harmonic Task Set
+  - Periods are multiples of each other
+  - Simplifies analysis (LCM = longest period)
+  - Example: 10, 20, 40, 80 ms periods
+
+
+TROUBLESHOOTING
+================================================================================
+
+Error: "Cannot open file Input.txt"
+  → Make sure input file is in same directory as executable
+  → Verify file permissions are readable
+  → Check spelling of filename
+
+Error: "Total utilization X% exceeds 65% limit"
+  → Reduce individual task execution times
+  → Increase task periods
+  → Remove lowest-priority tasks
+
+Output looks incorrect:
+  → Verify task set is read correctly from file
+  → Check utilization calculation is accurate
+  → Trace through first few time steps manually
+  → Compare against provided examples
+
+Performance analysis:
+  → Count preemptions in trace
+  → Measure idle time periods
+  → Compare RM vs EDF preemption counts
+  → Verify deadline met for all instances
+
+
+ENHANCEMENT IDEAS (BONUS)
+================================================================================
+
+Priority Inheritance Protocol (PIP) - 20% Bonus:
+  - Prevent priority inversion with shared resources
+  - When high-priority task waits on low-priority resource holder
+  - Boost low-priority task to prevent blocking
+
+Priority Ceiling Protocol (PCP) - 30% Bonus:
+  - More efficient than PIP
+  - Set resource ceiling = max priority of users
+  - Task assuming ceiling avoids nested blocking
+
+Implementation steps:
+  1. Add resource array to TCB structure
+  2. Track which task holds each resource
+  3. Detect when high-priority task waits
+  4. Boost holding task priority accordingly
+  5. Update OS_Sched() to check for priority changes
+
+
+REPORTING REQUIREMENTS
+================================================================================
+
+Report must be 4 A4 pages maximum, 12pt font:
+
+Page 1:
+  - Title, team members, student IDs, date
+  - Project overview and objectives
+
+Page 2-3:
+  - System design and architecture
+  - Data structures and algorithms
+  - Implementation details
+
+Page 4:
+  - Test results and analysis
+  - Comparison of RM vs EDF
+  - Discussion of problems solved
+  - Conclusion
+
+Use diagrams/flowcharts to explain complex concepts.
+Include key code snippets if space permits.
+
+
+PRESENTATION TIPS (5 minutes)
+================================================================================
+
+Time allocation:
+  - 0:00-1:00 - Quick implementation overview
+  - 1:00-3:00 - Problems solved and key decisions
+  - 3:00-4:00 - Demo of running scheduler
+  - 4:00-5:00 - Extra features (if implemented)
+
+Demo strategy:
+  1. Start scheduler with Input1.txt
+  2. Show output and explain key lines
+  3. Run with Input2.txt to show different behavior
+  4. Display source code sections when asked
+  5. Be ready to explain OS_Sched() function
+
+Questions to prepare for:
+  - Why RM uses period for priority?
+  - How does EDF differ from RM?
+  - How are deadlines calculated?
+  - What happens with simultaneous releases?
+  - Why is 65% utilization the limit?
+  - How to detect deadline misses?
+
+
+REFERENCES
+================================================================================
+
+Key Functions in simulator:
+  - read_taskset(): Input parsing
+  - rm_assign_priority(): RM priority assignment
+  - edf_assign_priority(): EDF deadline setup
+  - select_next_task(): Scheduler core logic
+  - simulate_scheduling(): Main simulation loop
+
+Related OS concepts:
+  - Priority-based preemptive scheduling
+  - Task control blocks and ready queues
+  - Time management and periodic execution
+  - Context switching and task state management
+
+
+SUBMISSION CHECKLIST
+================================================================================
+
+Before submitting OSP-Project-TeamNumber.zip:
+
+Source Code:
+  ☐ scheduler.c compiles without errors
+  ☐ All #include files present
+  ☐ Tested with both Input1.txt and Input2.txt
+  ☐ Works for additional test cases
+
+Report:
+  ☐ REPORT.md or REPORT.docx included
+  ☐ 4 A4 pages, 12pt font maximum
+  ☐ All team member names and IDs listed
+  ☐ Implementation details clearly explained
+  ☐ Flowcharts/diagrams included
+
+Input Files:
+  ☐ Input1.txt included (4 tasks)
+  ☐ Input2.txt included (5 tasks)
+  ☐ Format correct (N on first line)
+
+Documentation:
+  ☐ README.txt or IMPLEMENTATION_GUIDE.txt
+  ☐ Compilation instructions clear
+  ☐ Usage examples provided
+  ☐ Algorithm explanation included
+
+Bonus (if applicable):
+  ☐ PIP or PCP implementation documented
+  ☐ Extra test cases provided
+  ☐ Performance analysis included
+
+File naming:
+  ☐ OSP-Project-X.zip (X = team number)
+  ☐ All files properly organized in archive
+
+================================================================================
+Good luck with your presentation and submission!
+================================================================================
