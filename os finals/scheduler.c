@@ -6,6 +6,7 @@
 
 #define MAX_TASKS 7
 #define MAX_TIME 1000
+#define MAX_JOBS 100
 
 typedef struct {
     int task_id;
@@ -26,6 +27,19 @@ typedef struct {
 } TaskSet;
 
 typedef struct {
+    int job_id;
+    int task_id;
+    int period;
+    int execution_time;
+    int release_time;
+    int absolute_deadline;
+    int start_time;
+    int end_time;
+    int completed;
+    char status[20];
+} JobRecord;
+
+typedef struct {
     int time;
     int task_id;
     char event[50]; // "start", "end", "preempt"
@@ -33,6 +47,9 @@ typedef struct {
 
 Event events[MAX_TIME];
 int event_count = 0;
+
+JobRecord jobs[MAX_JOBS];
+int job_count = 0;
 
 // Read task set from input file
 void read_taskset(const char *filename, TaskSet *taskset) {
@@ -77,6 +94,11 @@ void edf_assign_priority(TaskSet *taskset) {
     }
 }
 
+// Forward declarations
+void record_job(int task_id, int period, int exec_time, int release,
+                int deadline, int start, int end, int completed);
+void print_job_table(const char *algorithm_name);
+
 // Find next ready task with highest priority (lowest priority value)
 int select_next_task(TaskSet *taskset) {
     int best_idx = -1;
@@ -107,7 +129,7 @@ void generate_arrivals(TaskSet *taskset, int total_time, int *arrivals[MAX_TASKS
     }
 }
 
-// Simulate RM or EDF scheduling
+// Simulate RM or EDF scheduling with job tracking
 void simulate_scheduling(TaskSet *taskset, int total_time, int algorithm) {
     if (algorithm == 0) {
         printf("=== RATE MONOTONIC (RM) SCHEDULING ===\n");
@@ -132,16 +154,19 @@ void simulate_scheduling(TaskSet *taskset, int total_time, int algorithm) {
     printf("-----|--------------|-------------------\n");
 
     int current_task = -1;
-    int time_slice = 0;
+    int task_start_time = -1;
+    int job_instance[MAX_TASKS] = {0}; // Track job instances per task
 
     for (int t = 0; t < total_time; t++) {
         // Check for new arrivals (task releases)
         for (int i = 0; i < taskset->num_tasks; i++) {
-            if (t > 0 && t % taskset->tasks[i].period == 0) {
+            if (t % taskset->tasks[i].period == 0 && t > 0) {
                 taskset->tasks[i].status = 0; // ready
                 taskset->tasks[i].remaining_time = taskset->tasks[i].execution_time;
                 taskset->tasks[i].deadline = t + taskset->tasks[i].period;
-                printf("%4d | Task%d        | Released\n", t, taskset->tasks[i].task_id);
+                job_instance[i]++;
+                printf("%4d | Task%d        | Released (Job %d)\n", t,
+                    taskset->tasks[i].task_id, job_instance[i]);
             }
         }
 
@@ -149,13 +174,17 @@ void simulate_scheduling(TaskSet *taskset, int total_time, int algorithm) {
         int next_task = select_next_task(taskset);
 
         if (next_task != current_task) {
+            // Record previous job if it was running
             if (current_task >= 0) {
                 printf("%4d | Task%d        | Preempted\n", t,
                     taskset->tasks[current_task].task_id);
             }
+
+            // Start new task
             if (next_task >= 0) {
-                printf("%4d | Task%d        | Started\n", t,
-                    taskset->tasks[next_task].task_id);
+                printf("%4d | Task%d        | Started (Job %d)\n", t,
+                    taskset->tasks[next_task].task_id, job_instance[next_task]);
+                task_start_time = t;
             }
             current_task = next_task;
         }
@@ -166,15 +195,121 @@ void simulate_scheduling(TaskSet *taskset, int total_time, int algorithm) {
             taskset->tasks[current_task].remaining_time--;
 
             if (taskset->tasks[current_task].remaining_time == 0) {
-                printf("%4d | Task%d        | Completed\n", t,
-                    taskset->tasks[current_task].task_id);
-                taskset->tasks[current_task].status = 2; // blocked/waiting
+                int task_idx = current_task;
+                int end_time = t + 1;
+                int release_time = t + 1 - taskset->tasks[task_idx].execution_time;
+
+                // Adjust release time for periodic jobs
+                if (job_instance[task_idx] > 1) {
+                    release_time = (job_instance[task_idx] - 1) * taskset->tasks[task_idx].period;
+                }
+
+                int deadline = release_time + taskset->tasks[task_idx].period;
+
+                printf("%4d | Task%d        | Completed (Job %d)\n", t,
+                    taskset->tasks[task_idx].task_id, job_instance[task_idx]);
+
+                // Record job execution
+                record_job(
+                    taskset->tasks[task_idx].task_id,
+                    taskset->tasks[task_idx].period,
+                    taskset->tasks[task_idx].execution_time,
+                    release_time,
+                    deadline,
+                    task_start_time,
+                    end_time,
+                    1
+                );
+
+                taskset->tasks[task_idx].status = 2; // blocked/waiting
                 current_task = -1;
             }
         } else {
             printf("%4d | None         | Idle\n", t);
         }
     }
+
+    // Print job execution table
+    print_job_table(algorithm == 0 ? "RATE MONOTONIC (RM)" : "EARLIEST DEADLINE FIRST (EDF)");
+
+    // Reset job counter for next algorithm
+    job_count = 0;
+}
+
+// Track job execution details
+void record_job(int task_id, int period, int exec_time, int release,
+                int deadline, int start, int end, int completed) {
+    if (job_count < MAX_JOBS) {
+        jobs[job_count].job_id = job_count + 1;
+        jobs[job_count].task_id = task_id;
+        jobs[job_count].period = period;
+        jobs[job_count].execution_time = exec_time;
+        jobs[job_count].release_time = release;
+        jobs[job_count].absolute_deadline = deadline;
+        jobs[job_count].start_time = start;
+        jobs[job_count].end_time = end;
+        jobs[job_count].completed = completed;
+
+        if (completed && end <= deadline) {
+            strcpy(jobs[job_count].status, "✓ Met");
+        } else if (completed && end > deadline) {
+            strcpy(jobs[job_count].status, "✗ MISSED");
+        } else {
+            strcpy(jobs[job_count].status, "Incomplete");
+        }
+
+        job_count++;
+    }
+}
+
+// Print job execution table
+void print_job_table(const char *algorithm_name) {
+    printf("\n");
+    printf("================================================================================\n");
+    printf("%s - DETAILED JOB EXECUTION TABLE\n", algorithm_name);
+    printf("================================================================================\n");
+    printf("JOB# | TASK | PERIOD | EXEC | RELEASE | DEADLINE | START | END  | STATUS\n");
+    printf("-----|------|--------|------|---------|----------|-------|------|---------------\n");
+
+    for (int i = 0; i < job_count; i++) {
+        printf("%4d | T%-2d  | %6d | %4d | %7d | %8d | %5d | %4d | %s\n",
+            jobs[i].job_id,
+            jobs[i].task_id,
+            jobs[i].period,
+            jobs[i].execution_time,
+            jobs[i].release_time,
+            jobs[i].absolute_deadline,
+            jobs[i].start_time,
+            jobs[i].end_time,
+            jobs[i].status);
+    }
+    printf("================================================================================\n\n");
+}
+
+// Print context switches summary
+void print_context_switches() {
+    printf("================================================================================\n");
+    printf("CONTEXT SWITCH ANALYSIS\n");
+    printf("================================================================================\n");
+
+    int switch_count = 0;
+    int last_task = -1;
+
+    for (int i = 0; i < job_count; i++) {
+        if (jobs[i].task_id != last_task && jobs[i].start_time >= 0) {
+            switch_count++;
+            printf("Switch %d: Time %d - Task %d starts (Released at %d, Deadline %d)\n",
+                switch_count,
+                jobs[i].start_time,
+                jobs[i].task_id,
+                jobs[i].release_time,
+                jobs[i].absolute_deadline);
+            last_task = jobs[i].task_id;
+        }
+    }
+
+    printf("\nTotal Context Switches: %d\n", switch_count);
+    printf("================================================================================\n\n");
 }
 
 // Main function
@@ -213,6 +348,17 @@ int main(int argc, char *argv[]) {
     // Reset and simulate EDF scheduling
     read_taskset(input_file, &taskset);
     simulate_scheduling(&taskset, 200, 1);
+
+    printf("\n");
+    printf("================================================================================\n");
+    printf("SUMMARY\n");
+    printf("================================================================================\n");
+    printf("Task Set Utilization: %.2f%%\n", taskset.utilization * 100);
+    printf("Utilization Status: %s (≤ 65%% required)\n",
+        taskset.utilization <= 0.65 ? "✓ VALID" : "✗ INVALID");
+    printf("Number of Tasks: %d (max 7)\n", taskset.num_tasks);
+    printf("Simulation Time Window: 0-199 time units\n");
+    printf("================================================================================\n");
 
     return 0;
 }
