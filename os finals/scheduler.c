@@ -155,38 +155,53 @@ void simulate_scheduling(TaskSet *taskset, int total_time, int algorithm) {
 
     int current_task = -1;
     int task_start_time = -1;
-    int job_instance[MAX_TASKS] = {0}; // Track job instances per task
+    int job_instance[MAX_TASKS];
+    for (int i = 0; i < taskset->num_tasks; i++) job_instance[i] = 1; // Start at 1 for correct calculation
 
     for (int t = 0; t < total_time; t++) {
         // Check for new arrivals (task releases)
         for (int i = 0; i < taskset->num_tasks; i++) {
-            if (t % taskset->tasks[i].period == 0 && t > 0) {
+            if (t > 0 && t % taskset->tasks[i].period == 0) {
                 taskset->tasks[i].status = 0; // ready
                 taskset->tasks[i].remaining_time = taskset->tasks[i].execution_time;
                 taskset->tasks[i].deadline = t + taskset->tasks[i].period;
                 job_instance[i]++;
                 printf("%4d | Task%d        | Released (Job %d)\n", t,
                     taskset->tasks[i].task_id, job_instance[i]);
+            } else if (t == 0) {
+                // Initialize all tasks as ready at t=0
+                taskset->tasks[i].status = 0;
+                taskset->tasks[i].remaining_time = taskset->tasks[i].execution_time;
+                taskset->tasks[i].deadline = t + taskset->tasks[i].period;
             }
         }
 
         // Select next task
         int next_task = select_next_task(taskset);
 
+        // Only preempt if next_task has HIGHER priority (LOWER priority value)
+        int should_switch = 0;
         if (next_task != current_task) {
-            // Record previous job if it was running
-            if (current_task >= 0) {
-                printf("%4d | Task%d        | Preempted\n", t,
-                    taskset->tasks[current_task].task_id);
+            if (current_task < 0) {
+                // No current task, switch to next if available
+                should_switch = (next_task >= 0) ? 1 : 0;
+            } else if (next_task >= 0) {
+                // Compare priorities: lower value = higher priority
+                if (taskset->tasks[next_task].priority < taskset->tasks[current_task].priority) {
+                    should_switch = 1; // Higher priority task ready, preempt
+                }
             }
 
-            // Start new task
-            if (next_task >= 0) {
+            if (should_switch) {
+                if (current_task >= 0) {
+                    printf("%4d | Task%d        | Preempted\n", t,
+                        taskset->tasks[current_task].task_id);
+                }
                 printf("%4d | Task%d        | Started (Job %d)\n", t,
                     taskset->tasks[next_task].task_id, job_instance[next_task]);
                 task_start_time = t;
+                current_task = next_task;
             }
-            current_task = next_task;
         }
 
         // Execute current task
@@ -197,13 +212,9 @@ void simulate_scheduling(TaskSet *taskset, int total_time, int algorithm) {
             if (taskset->tasks[current_task].remaining_time == 0) {
                 int task_idx = current_task;
                 int end_time = t + 1;
-                int release_time = t + 1 - taskset->tasks[task_idx].execution_time;
 
-                // Adjust release time for periodic jobs
-                if (job_instance[task_idx] > 1) {
-                    release_time = (job_instance[task_idx] - 1) * taskset->tasks[task_idx].period;
-                }
-
+                // Calculate correct release time based on job instance
+                int release_time = (job_instance[task_idx] - 1) * taskset->tasks[task_idx].period;
                 int deadline = release_time + taskset->tasks[task_idx].period;
 
                 printf("%4d | Task%d        | Completed (Job %d)\n", t,
@@ -231,6 +242,47 @@ void simulate_scheduling(TaskSet *taskset, int total_time, int algorithm) {
 
     // Print job execution table
     print_job_table(algorithm == 0 ? "RATE MONOTONIC (RM)" : "EARLIEST DEADLINE FIRST (EDF)");
+
+    // Print task summary table
+    printf("\n");
+    printf("================================================================================\n");
+    printf("TASK SUMMARY TABLE - %s\n", algorithm == 0 ? "RATE MONOTONIC (RM)" : "EARLIEST DEADLINE FIRST (EDF)");
+    printf("================================================================================\n");
+    printf("P = period  |  C = execution  |  D = absolute deadline\n");
+    printf("================================================================================\n");
+
+    for (int i = 0; i < taskset->num_tasks; i++) {
+        int first_start = INT_MAX;
+        int last_end = 0;
+        int job_cnt = 0;
+
+        // Find actual start/end times and job count from execution
+        for (int j = 0; j < job_count; j++) {
+            if (jobs[j].task_id == taskset->tasks[i].task_id) {
+                if (jobs[j].start_time < first_start) {
+                    first_start = jobs[j].start_time;
+                }
+                if (jobs[j].end_time > last_end) {
+                    last_end = jobs[j].end_time;
+                }
+                job_cnt++;
+            }
+        }
+
+        if (first_start == INT_MAX) first_start = 0;
+        if (last_end == 0) last_end = 0;
+
+        printf("Task%d  P=%d  C=%d  D=%d  start=%d  end=%d  jobs=%d\n",
+            taskset->tasks[i].task_id,
+            taskset->tasks[i].period,
+            taskset->tasks[i].execution_time,
+            taskset->tasks[i].period,
+            first_start,
+            last_end,
+            job_cnt
+        );
+    }
+    printf("================================================================================\n");
 
     // Reset job counter for next algorithm
     job_count = 0;
@@ -340,18 +392,18 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Simulate RM scheduling
-    simulate_scheduling(&taskset, 200, 0);
+    // Simulate RM scheduling (1000 time units to allow all tasks to complete)
+    simulate_scheduling(&taskset, 1000, 0);
 
     printf("\n\n");
 
     // Reset and simulate EDF scheduling
     read_taskset(input_file, &taskset);
-    simulate_scheduling(&taskset, 200, 1);
+    simulate_scheduling(&taskset, 1000, 1);
 
     printf("\n");
     printf("================================================================================\n");
-    printf("SUMMARY\n");
+    printf("FINAL SUMMARY\n");
     printf("================================================================================\n");
     printf("Task Set Utilization: %.2f%%\n", taskset.utilization * 100);
     printf("Utilization Status: %s (≤ 65%% required)\n",
